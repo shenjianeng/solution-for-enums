@@ -1,15 +1,12 @@
 package com.github.shen.swagger.plugin;
 
-import com.fasterxml.classmate.ResolvedType;
 import com.google.common.base.Joiner;
-import org.apache.commons.lang3.StringUtils;
 import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.util.ReflectionUtils;
 import springfox.documentation.builders.OperationBuilder;
 import springfox.documentation.builders.ParameterBuilder;
 import springfox.documentation.service.AllowableListValues;
 import springfox.documentation.service.Parameter;
-import springfox.documentation.service.ResolvedMethodParameter;
 import springfox.documentation.spi.DocumentationType;
 import springfox.documentation.spi.service.OperationBuilderPlugin;
 import springfox.documentation.spi.service.ParameterBuilderPlugin;
@@ -27,93 +24,101 @@ import java.util.stream.Collectors;
 @SuppressWarnings(value = "all")
 public class EnumParameterBuilderPlugin implements ParameterBuilderPlugin, OperationBuilderPlugin {
 
-    private static final Joiner joiner = Joiner.on(",");
+	private static final Joiner joiner = Joiner.on(",");
 
-    @Override
-    public void apply(ParameterContext context) {
-        Class<?> type = context.resolvedMethodParameter().getParameterType().getErasedType();
-        if (Enum.class.isAssignableFrom(type)) {
-            SwaggerDisplayEnum annotation = AnnotationUtils.findAnnotation(type, SwaggerDisplayEnum.class);
-            if (annotation != null) {
+	@Override
+	public void apply(ParameterContext context) {
+		Class<?> type = context.resolvedMethodParameter().getParameterType().getErasedType();
+		if (Enum.class.isAssignableFrom(type)) {
+			SwaggerDisplayEnum annotation = AnnotationUtils.findAnnotation(type, SwaggerDisplayEnum.class);
+			if (annotation != null) {
 
-                String index = annotation.index();
-                String name = annotation.name();
-                Object[] enumConstants = type.getEnumConstants();
-                List<String> displayValues = Arrays.stream(enumConstants).filter(Objects::nonNull).map(item -> {
-                    Class<?> currentClass = item.getClass();
+				String index = annotation.index();
+				String name = annotation.name();
+				Object[] enumConstants = type.getEnumConstants();
+				List<String> displayValues = Arrays.stream(enumConstants).filter(Objects::nonNull).map(item -> {
+					Class<?> currentClass = item.getClass();
 
-                    Field indexField = ReflectionUtils.findField(currentClass, index);
-                    ReflectionUtils.makeAccessible(indexField);
-                    Object value = ReflectionUtils.getField(indexField, item);
+					Field indexField = ReflectionUtils.findField(currentClass, index);
+					ReflectionUtils.makeAccessible(indexField);
+					Object value = ReflectionUtils.getField(indexField, item);
 
-                    Field descField = ReflectionUtils.findField(currentClass, name);
-                    ReflectionUtils.makeAccessible(descField);
-                    Object desc = ReflectionUtils.getField(descField, item);
-                    return value.toString();
+					Field descField = ReflectionUtils.findField(currentClass, name);
+					ReflectionUtils.makeAccessible(descField);
+					Object desc = ReflectionUtils.getField(descField, item);
+					return value.toString();
 
-                }).collect(Collectors.toList());
+				}).collect(Collectors.toList());
 
-                ParameterBuilder parameterBuilder = context.parameterBuilder();
-                AllowableListValues values = new AllowableListValues(displayValues, "LIST");
-                parameterBuilder.allowableValues(values);
-            }
-        }
-    }
+				ParameterBuilder parameterBuilder = context.parameterBuilder();
+				AllowableListValues values = new AllowableListValues(displayValues, "LIST");
+				parameterBuilder.allowableValues(values);
+			}
+		}
+	}
 
 
-    @Override
-    public boolean supports(DocumentationType delimiter) {
-        return true;
-    }
+	@Override
+	public boolean supports(DocumentationType delimiter) {
+		return true;
+	}
 
-    @Override
-    public void apply(OperationContext context) {
-        Map<String, List<String>> map = new HashMap<>();
-        List<ResolvedMethodParameter> parameters = context.getParameters();
-        parameters.forEach(parameter -> {
-            ResolvedType parameterType = parameter.getParameterType();
-            Class<?> clazz = parameterType.getErasedType();
-            if (Enum.class.isAssignableFrom(clazz)) {
-                SwaggerDisplayEnum annotation = AnnotationUtils.findAnnotation(clazz, SwaggerDisplayEnum.class);
-                if (annotation != null) {
-                    String index = annotation.index();
-                    String name = annotation.name();
-                    Object[] enumConstants = clazz.getEnumConstants();
+	@Override
+	public void apply(OperationContext context) {
+		OperationBuilder operationBuilder = context.operationBuilder();
+		Field parametersField = ReflectionUtils.findField(operationBuilder.getClass(), "parameters");
+		ReflectionUtils.makeAccessible(parametersField);
+		List<Parameter> parameters = (List<Parameter>) ReflectionUtils.getField(parametersField, operationBuilder);
+		if (null == parameters) {
+			return;
+		}
 
-                    List<String> displayValues = Arrays.stream(enumConstants).filter(Objects::nonNull).map(item -> {
-                        Class<?> currentClass = item.getClass();
+		parameters.forEach(parameter -> {
+			if (parameter.getType().isPresent()) {
+				Class<?> clazz = parameter.getType().get().getErasedType();
+				if (Enum.class.isAssignableFrom(clazz)) {
+					SwaggerDisplayEnum annotation = AnnotationUtils.findAnnotation(clazz, SwaggerDisplayEnum.class);
+					if (annotation != null) {
+						String index = annotation.index();
+						String name = annotation.name();
+						Object[] enumConstants = clazz.getEnumConstants();
 
-                        Field indexField = ReflectionUtils.findField(currentClass, index);
-                        ReflectionUtils.makeAccessible(indexField);
-                        Object value = ReflectionUtils.getField(indexField, item);
+						List<String> displayValues = Arrays.stream(enumConstants).filter(Objects::nonNull).map(item -> {
+							Class<?> currentClass = item.getClass();
 
-                        Field descField = ReflectionUtils.findField(currentClass, name);
-                        ReflectionUtils.makeAccessible(descField);
-                        Object desc = ReflectionUtils.getField(descField, item);
-                        return value + ":" + desc;
+							Field indexField = ReflectionUtils.findField(currentClass, index);
+							ReflectionUtils.makeAccessible(indexField);
+							Object value = ReflectionUtils.getField(indexField, item);
 
-                    }).collect(Collectors.toList());
+							Field descField = ReflectionUtils.findField(currentClass, name);
+							ReflectionUtils.makeAccessible(descField);
+							Object desc = ReflectionUtils.getField(descField, item);
+							return value + ":" + desc;
 
-                    map.put(parameter.defaultName().or(""), displayValues);
+						}).collect(Collectors.toList());
 
-                    OperationBuilder operationBuilder = context.operationBuilder();
-                    Field parametersField = ReflectionUtils.findField(operationBuilder.getClass(), "parameters");
-                    ReflectionUtils.makeAccessible(parametersField);
-                    List<Parameter> list = (List<Parameter>) ReflectionUtils.getField(parametersField, operationBuilder);
+						List<String> allowValues = Arrays.stream(enumConstants).filter(Objects::nonNull).map(item -> {
+							Class<?> currentClass = item.getClass();
 
-                    map.forEach((k, v) -> {
-                        for (Parameter currentParameter : list) {
-                            if (StringUtils.equals(currentParameter.getName(), k)) {
-                                Field description = ReflectionUtils.findField(currentParameter.getClass(), "description");
-                                ReflectionUtils.makeAccessible(description);
-                                Object field = ReflectionUtils.getField(description, currentParameter);
-                                ReflectionUtils.setField(description, currentParameter, field + " , " + joiner.join(v));
-                                break;
-                            }
-                        }
-                    });
-                }
-            }
-        });
-    }
+							Field indexField = ReflectionUtils.findField(currentClass, index);
+							ReflectionUtils.makeAccessible(indexField);
+							Object value = ReflectionUtils.getField(indexField, item);
+							return String.valueOf(value);
+
+						}).collect(Collectors.toList());
+
+						final AllowableListValues allowableListValues = new AllowableListValues(allowValues, clazz.getTypeName());
+
+						Field description = ReflectionUtils.findField(parameter.getClass(), "description");
+						Field allowableValues = ReflectionUtils.findField(parameter.getClass(), "allowableValues");
+						ReflectionUtils.makeAccessible(description);
+						ReflectionUtils.makeAccessible(allowableValues);
+						Object field = ReflectionUtils.getField(description, parameter);
+						ReflectionUtils.setField(description, parameter, field + " , " + joiner.join(displayValues));
+						ReflectionUtils.setField(allowableValues, parameter, allowableListValues);
+					}
+				}
+			}
+		});
+	}
 }
